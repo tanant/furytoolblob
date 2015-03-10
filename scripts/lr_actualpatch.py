@@ -21,13 +21,12 @@ with open(AgPatchOut, 'rU') as fin:
     for row in fin:
         data = row.strip().split(',')
         conn.execute(sqlstring, (data[2], data[1], 107491))
-        #conn.commit()
-        #print "commit row:", data[0]
-        rowid +=1
-        if (rowid %100) == 0:
+        # conn.commit()
+        # print "commit row:", data[0]
+        rowid += 1
+        if (rowid % 100) == 0:
             print rowid
-        
-        
-     
-conn.commit()        
+
+
+conn.commit()
 conn.close()

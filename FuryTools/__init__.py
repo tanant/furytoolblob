@@ -14,7 +14,7 @@ and hooks that allow us to manage user lists and suchlike.
 # import pkgutil
 # copied from http://stackoverflow.com/questions/3365740/how-to-import-all-submodules
 #__all__ = []
-#for loader, module_name, is_pkg in  pkgutil.walk_packages(__path__):
+# for loader, module_name, is_pkg in  pkgutil.walk_packages(__path__):
 #    __all__.append(module_name)
 #    module = loader.find_module(module_name).load_module(module_name)
 #    print(module_name)
@@ -31,17 +31,15 @@ __date__ = '10 May 2013'
 
 
 frozen = getattr(sys, 'frozen', '')
-if not frozen:  
+if not frozen:
     __pkgroot__ = os.path.dirname(os.path.realpath(__file__))
 else:
     __pkgroot__ = os.path.dirname(sys.executable)
-    
-    
 
 
 def main(*argv, **kwargs):
     print("main!")
     print __pkgroot__
-    
+
 if __name__ == '__main__':
     main(sys.argv)
