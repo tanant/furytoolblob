@@ -30,11 +30,13 @@ def _launch(command_list, list_of_subprocs, poll_interval=0.1):
 
         if launched:
             list_of_subprocs[idx] = subprocess.Popen(command_list)
+            # FIXME: what's this pass doing here?
             pass
 
 def _cleanup(list_of_subprocs, poll_interval=0.1):
+    # FIXME: I don't think this works: spawn_slots is not defined in this scope
     cleanup = False
-    while not cleanup:
+    while spawn_slots:
         for x in list_of_subprocs:
             try:
                 if x.poll() is not None:
@@ -108,18 +110,19 @@ def convert_dir(directory, overwrite=False, binary_override=None, spawn_instance
         spawn_slots.append(None)
     _info("Allowing {0} spawn slots".format(spawn))
 
-    exists = False
     try:
         os.makedirs(targetdir)
+        exists = False
     except:
         exists = True
-        pass
+
 
     skipped = 0
     processed = 0
 
     _info("starting processing")
-    candidates = [x for x in sorted(os.listdir(basedir)) if x.split('.')[-1].lower() in accepted]
+    candidates = [x for x in sorted(os.listdir(basedir))
+                  if x.split('.')[-1].lower() in accepted]
 
     for idx, file in enumerate(candidates):
         newfile = '.'.join(file.split('.')[0:-1] + ['jpg'])
@@ -131,7 +134,10 @@ def convert_dir(directory, overwrite=False, binary_override=None, spawn_instance
             _info("skipping\n{dest}\n".format(dest=dest))
             skipped += 1
         else:
-            _launch([x.format(ffmpeg=executable, quality=quality, loglevel=loglevel, overwrite_flag=overwrite_flag, infile=src, outfile=dest) for x in execstring], spawn_slots)
+            _launch([x.format(ffmpeg=executable, quality=quality,
+                              loglevel=loglevel, overwrite_flag=overwrite_flag,
+                              infile=src, outfile=dest) for x in execstring],
+                    spawn_slots)
 
             _info("converting\n{src} ---> {dest}\n".format(src=src, dest=dest))
             processed += 1

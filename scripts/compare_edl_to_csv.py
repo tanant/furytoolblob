@@ -11,6 +11,7 @@ Created on 12/09/2013
 @author: OM005188
 '''
 import re
+import math
 import os
 import sys
 import csv
@@ -102,48 +103,41 @@ class EDL(object):
         return nextline
 
     def _load_clips(self):
-        re_clipstartstring = ''.join([r'\s*',                       # any number of spaces (front pad)
-                                      r'(?P<edit_num>[0-9]+)\s+',   # a string of digits, then at least one space
-                                      r'(?P<name>[^\s]+)\s+',       # a string of non-space things, then at least one space
-                                      r'(?P<source>[^\s]+)\s+',   # a string of non-space things, then at least one space
-                                      r'(?P<transfer>[^\s]+)\s+',   # etc
-                                      r'(?P<src_in>[^\s]+)\s+',
-                                      r'(?P<src_out>[^\s]+)\s+',
-                                      r'(?P<edit_in>[^\s]+)\s+',
-                                      r'(?P<edit_out>[^\s]+)\s+',
-                                      r'$'])                        # and nothing else
+        # FIXME: for performance you should call re.compile on these outside of the line loop:
 
-        re_ascsop = ''.join([r'\s*\*\s*',                                    # a star, with or without spaces
-                             r'(?i)ASC_SOP\s+',                              # case insensitive magic ASC_SOP match
-                             r'\((?P<slope>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
-                             r'\((?P<offset>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
-                             r'\((?P<power>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
-                             r'$'])                                          # and nothing else
+        re_clipstartstring = (r'\s*',                       # any number of spaces (front pad)
+                              r'(?P<edit_num>[0-9]+)\s+',   # a string of digits, then at least one space
+                              r'(?P<name>[^\s]+)\s+',       # a string of non-space things, then at least one space
+                              r'(?P<source>[^\s]+)\s+',   # a string of non-space things, then at least one space
+                              r'(?P<transfer>[^\s]+)\s+',   # etc
+                              r'(?P<src_in>[^\s]+)\s+',
+                              r'(?P<src_out>[^\s]+)\s+',
+                              r'(?P<edit_in>[^\s]+)\s+',
+                              r'(?P<edit_out>[^\s]+)\s+',
+                              r'$')                        # and nothing else
 
-        re_ascsat = ''.join([r'\s*\*\s*',                            # a star, with or without spaces
-                             r'(?i)ASC_SAT\s+',                      # case insensitive magic ASC_SAT match
-                             r'\((?P<saturation>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of numbers within parentheses
-                             r'$'])                                  # and nothing else
+        re_ascsop = (r'\s*\*\s*',                                    # a star, with or without spaces
+                     r'(?i)ASC_SOP\s+',                              # case insensitive magic ASC_SOP match
+                     r'\((?P<slope>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
+                     r'\((?P<offset>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
+                     r'\((?P<power>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of within parentheses
+                     r'$')                                          # and nothing else
 
-        re_fromclip = ''.join([r'\s*\*\s*',                           # a star, with or without spaces
-                               r'(?i)FROM CLIP NAME:',                 # magic opening statement
-                               r'(?P<from_clip_name>.+)',              # whatever you've got on the line
-                               r'$'])                                  # all the way to EOL
+        re_ascsat = (r'\s*\*\s*',                            # a star, with or without spaces
+                         r'(?i)ASC_SAT\s+',                      # case insensitive magic ASC_SAT match
+                         r'\((?P<saturation>[0-9.-]+\s+[0-9.-]+\s+[0-9.-]+)\)\s*',  # triplets of numbers within parentheses
+                         r'$')                                  # and nothing else
+
+        re_fromclip = (r'\s*\*\s*',                           # a star, with or without spaces
+                       r'(?i)FROM CLIP NAME:',                 # magic opening statement
+                       r'(?P<from_clip_name>.+)',              # whatever you've got on the line
+                       r'$')                                  # all the way to EOL
 
         understood = [re_ascsop, re_ascsat, re_fromclip, re_clipstartstring]
 
-        slope = None
-        offset = None
-        power = None
-        saturation = None
-        from_clip_name = None
-        src_in = None
-        src_out = None
-        edit_in = None
-        edit_out = None
-        name = None
         exhausted = False
 
+        current_clip = {}
         # it's a list.
         self.clips = []
 
@@ -153,10 +147,13 @@ class EDL(object):
             line = self._nextline()
 
             if line is None:
+                # FIXME: I think you want to 'break' here
                 exhausted = True
             elif not line.strip():  # skip blank lines
+                # FIXME: I think you want a 'continue' here
                 pass
 
+            # FIXME: if line is None: this will fail (which is why you need the break above):
             result = re.search(re_clipstartstring, line)
             if result is not None:
                 self._seek_back()
@@ -169,80 +166,49 @@ class EDL(object):
             line = self._nextline()
 
             if line is None:
-                exhausted = True
-                result = None
-                re_command = None
+                if name in current_clip:
+                    # there's data here waiting to be flushed, flush it
+                    self.clips.append(current_clip)
+                # we're done
+                break
 
-            elif not line.strip():  # skip blank lines
-                pass
+            if not line.strip():  # skip blank lines
+                # FIXME: I think you want a 'continue' here
+                # pass
+                continue
+
+            # find out which re_matches the line
+            for re_command in understood:
+                result = re.search(re_command, line)
+                if result is not None:
+                    break
             else:
-                # find out which re_matches the line
-                for re_command in understood:
-                    result = re.search(re_command, line)
-                    if result is not None:
-                        break
-                if result is None:
-                    re_command = None
-
-            if False:
-                pass
-
-            elif exhausted:
-                if name is not None:  # there's data here waiting to be flushed, flush it
-                    self.clips.append({'name': name,
-                                       'slope': slope,
-                                       'offset': offset,
-                                       'power': power,
-                                       'saturation': saturation,
-                                       'from_clip_name': from_clip_name,
-                                       'src_in': src_in,
-                                       'src_out': src_out,
-                                       'edit_in': edit_in,
-                                       'edit_out': edit_out, })
-
-            elif result is None:    # we don't know how to handle. Discard non-silently
+                # we don't know how to handle. Discard non-silently
                 self.body_unparsed.append((line, self._raw_pos + 1))
+                continue
 
-            elif re_command == re_ascsop:
-                slope = map(float, result.group('slope').split())
-                offset = map(float, result.group('offset').split())
-                power = map(float, result.group('power').split())
+            if re_command == re_ascsop:
+                current_clip['slope'] = map(float, result.group('slope').split())
+                current_clip['offset'] = map(float, result.group('offset').split())
+                current_clip['power'] = map(float, result.group('power').split())
             elif re_command == re_ascsat:
-                saturation = map(float, result.group('saturation'))
+                current_clip['saturation'] = map(float, result.group('saturation'))
             elif re_command == re_fromclip:
-                from_clip_name = result.group('from_clip_name').strip()
-
+                current_clip['from_clip_name'] = result.group('from_clip_name').strip()
             elif re_command == re_clipstartstring:
                 # the canary/key is 'name'
 
-                if name is not None:  # there's data here waiting to be flushed, flush it
-                    self.clips.append({'name': name,
-                                       'slope': slope,
-                                       'offset': offset,
-                                       'power': power,
-                                       'saturation': saturation,
-                                       'from_clip_name': from_clip_name,
-                                       'src_in': src_in,
-                                       'src_out': src_out,
-                                       'edit_in': edit_in,
-                                       'edit_out': edit_out, })
-                    slope = None
-                    offset = None
-                    power = None
-                    saturation = None
-                    from_clip_name = None
-                    name = None
-                    src_in = None
-                    src_out = None
-                    edit_in = None
-                    edit_out = None
+                if name in current_clip:
+                    # there's data here waiting to be flushed, flush it
+                    self.clips.append(current_clip)
+                    current_clip = {}
 
                 # always start new
-                name = result.group('name').lower()
-                src_in = result.group('src_in')
-                src_out = result.group('src_out')
-                edit_in = result.group('edit_in')
-                edit_out = result.group('edit_out')
+                current_clip['name'] = result.group('name').lower()
+                current_clip['src_in'] = result.group('src_in')
+                current_clip['src_out'] = result.group('src_out')
+                current_clip['edit_in'] = result.group('edit_in')
+                current_clip['edit_out'] = result.group('edit_out')
 
     def _load_header(self):
         # ignore empty lines
@@ -274,8 +240,6 @@ class EDL(object):
             report += ' ({x} unknown header lines, {y} unknown body lines)'.format(x=len(self.header_unparsed), y=len(self.body_unparsed))
         return report
 
-
-import math
 def frame_to_timecode(frame, fps=24):
     # dd hh mm ss ff
     #              1
@@ -305,8 +269,6 @@ def timecode_to_frame(timecodestring, fps=24):
     return sum(map(lambda x: int(x[0]) * int(x[1]), zip([24 * 60 * 60 * fps, 60 * 60 * fps, 60 * fps, fps, 1][::-1], components[::-1])))
 
 
-import math
-import re
 def frame_to_timecode(frame, fps=24):
     # dd hh mm ss ff
     #              1
@@ -333,6 +295,7 @@ def timecode_to_frame(timecodestring, fps=24):
 
     # the reversal of the components is
     # simply to take advantage of zip's halting condition
+    # FIXME:  might be good to decompose this into a few lines for readability
     return sum(map(lambda x: int(x[0]) * int(x[1]), zip([24 * 60 * 60 * fps, 60 * 60 * fps, 60 * fps, fps, 1][::-1], components[::-1])))
 
 # attach a new clipkey parameter
@@ -356,10 +319,8 @@ class comparison_EDL(EDL):
             self.clipkeys[key] = index
             # print key
 
-
-import sys
 if __name__ == '__main__':
-
+    import sys
     # edl = comparison_EDL(r'H:\user\anthony.tan\development\scripts\TO_048.edl')
     # for x in edl.clips:
     #    print x['name'], x['from_clip_name']
